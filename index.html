@@ -8,6 +8,9 @@
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     
+    <!-- SheetJS Library (Export Excel) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
     <!-- QRCode Generator Library -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 
@@ -125,7 +128,7 @@
                     <div class="bg-green-100 p-1.5 rounded-lg text-green-600"><i class="fa-solid fa-chart-pie"></i></div>
                     Statistik Kehadiran
                 </h2>
-                <div class="grid grid-cols-2 gap-4">
+                <div class="grid grid-cols-2 gap-4 mb-5">
                     <div class="bg-gray-50 p-4 rounded-xl text-center border border-gray-100 shadow-inner">
                         <p class="text-gray-500 text-xs font-bold uppercase tracking-wide mb-1">Total Peserta</p>
                         <p class="text-3xl font-black text-gray-800" id="stat-total">0</p>
@@ -133,6 +136,40 @@
                     <div class="bg-green-50 p-4 rounded-xl text-center border border-green-200 shadow-inner">
                         <p class="text-green-700 text-xs font-bold uppercase tracking-wide mb-1">Telah Hadir</p>
                         <p class="text-3xl font-black text-green-600" id="stat-hadir">0</p>
+                    </div>
+                </div>
+
+                <!-- Statistik per Fakultas -->
+                <div class="border-t border-gray-100 pt-4">
+                    <h3 class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3 flex justify-between items-center">
+                        <span>Persentase per Fakultas</span>
+                        <i class="fa-solid fa-building-columns text-green-600"></i>
+                    </h3>
+                    <div id="fakultas-stat-list" class="space-y-3 max-h-56 overflow-y-auto pr-1 table-container">
+                        <p class="text-xs text-gray-400 text-center py-2">Belum ada data fakultas</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tabel Daftar Kehadiran -->
+        <div class="w-full lg:w-2/3 flex flex-col fade-in" style="animation-delay: 0.2s;">
+            <div class="bg-white rounded-2xl shadow-sm border border-green-100 flex-grow flex flex-col overflow-hidden">
+                <div class="p-5 border-b border-gray-100 flex flex-col sm:flex-row justify-between items-center gap-4">
+                    <h2 class="text-lg font-bold text-green-900 flex items-center gap-2">
+                        <div class="bg-green-100 p-1.5 rounded-lg text-green-600"><i class="fa-solid fa-users"></i></div>
+                        Daftar Kehadiran
+                    </h2>
+                    <div class="flex items-center gap-2 w-full sm:w-auto">
+                        <div class="relative flex-grow sm:w-52">
+                            <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-400">
+                                <i class="fa-solid fa-search"></i>
+                            </div>
+                            <input type="text" id="search-input" class="block w-full pl-10 pr-3 py-2 border border-gray-200 rounded-xl leading-5 bg-gray-50 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 text-sm font-medium" placeholder="Cari Nama / ID...">
+                        </div>
+                        <button onclick="exportToExcel()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-3.5 rounded-xl text-xs flex items-center gap-1.5 shadow transition-all whitespace-nowrap">
+                            <i class="fa-solid fa-file-excel text-sm"></i> <span>Download Excel</span>
+                        </button>
                     </div>
                 </div>
             </div>
@@ -462,6 +499,80 @@
         function updateStatistics() {
             statTotal.textContent = participantsData.length;
             statHadir.textContent = participantsData.filter(p => p.status === 'Hadir').length;
+
+            // Perhitungan Statistik Berdasarkan Fakultas
+            const fakultasStats = {};
+            participantsData.forEach(p => {
+                const fak = p.fakultas && p.fakultas.trim() !== '' ? p.fakultas : 'Lainnya';
+                if (!fakultasStats[fak]) {
+                    fakultasStats[fak] = { total: 0, hadir: 0 };
+                }
+                fakultasStats[fak].total++;
+                if (p.status === 'Hadir') {
+                    fakultasStats[fak].hadir++;
+                }
+            });
+
+            const statListEl = document.getElementById('fakultas-stat-list');
+            statListEl.innerHTML = '';
+
+            const keys = Object.keys(fakultasStats);
+            if (keys.length === 0) {
+                statListEl.innerHTML = `<p class="text-xs text-gray-400 text-center py-2">Belum ada data fakultas</p>`;
+                return;
+            }
+
+            keys.forEach(fak => {
+                const { total, hadir } = fakultasStats[fak];
+                const percentage = total > 0 ? Math.round((hadir / total) * 100) : 0;
+
+                const item = document.createElement('div');
+                item.className = 'bg-gray-50 p-2.5 rounded-xl border border-gray-100 text-xs';
+                item.innerHTML = `
+                    <div class="flex justify-between items-center mb-1 font-semibold text-gray-700">
+                        <span class="truncate max-w-[160px]" title="${fak}">${fak}</span>
+                        <span class="text-green-700 font-bold">${hadir}/${total} <span class="text-gray-400 font-normal">(${percentage}%)</span></span>
+                    </div>
+                    <div class="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+                        <div class="bg-green-600 h-2 rounded-full transition-all duration-500" style="width: ${percentage}%"></div>
+                    </div>
+                `;
+                statListEl.appendChild(item);
+            });
+        }
+
+        // Download Rekap Absen ke File Excel (.xlsx)
+        function exportToExcel() {
+            if (!participantsData || participantsData.length === 0) {
+                alert('Tidak ada data absensi untuk diunduh.');
+                return;
+            }
+
+            const excelData = participantsData.map((p, index) => ({
+                'No': index + 1,
+                'ID / NIM': p.id,
+                'Nama Wisudawan/wati': p.nama,
+                'Fakultas': p.fakultas,
+                'Status Kehadiran': p.status,
+                'Waktu Hadir': p.waktuHadir
+            }));
+
+            const worksheet = XLSX.utils.json_to_sheet(excelData);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, 'Rekap Kehadiran Wisuda');
+
+            // Atur lebar kolom otomatis
+            worksheet['!cols'] = [
+                { wch: 6 },
+                { wch: 18 },
+                { wch: 32 },
+                { wch: 25 },
+                { wch: 18 },
+                { wch: 18 }
+            ];
+
+            const dateStr = new Date().toISOString().slice(0, 10);
+            XLSX.writeFile(workbook, `Rekap_Absensi_Wisuda_${dateStr}.xlsx`);
         }
 
         // Buka Window Scanner QR Terpisah
